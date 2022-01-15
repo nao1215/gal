@@ -1,3 +1,5 @@
+[![Build](https://github.com/nao1215/gal/actions/workflows/build.yml/badge.svg)](https://github.com/nao1215/gal/actions/workflows/build.yml)
+
 [[日本語](./doc/README.ja.md)]
 # gal - generate authors file from git log
 gal command generate AUTHORS.md file at current directory. gal command gets the author name and email address from the information in the git log. The information is written in alphabetical order in AUTHORS.md.
