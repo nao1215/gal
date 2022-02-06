@@ -23,13 +23,15 @@ import (
 	"os/exec"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jessevdk/go-flags"
 )
 
 type options struct {
-	Commit  bool `short:"c" long:"commit" description:"Sort AUTHOR names by descending order of the commits (default: alphabetical order)"`
+	LOC     bool `short:"l" long:"loc" description:"Sort AUTHOR names by amount of modified LOC (descendig order, default: alphabetical order)"`
+	Commit  bool `short:"c" long:"commit" description:"Sort AUTHOR names by amount of commits (descendig order, default: alphabetical order)"`
 	Version bool `short:"v" long:"version" description:"Show gal command version"`
 }
 
@@ -37,6 +39,11 @@ var osExit = os.Exit
 
 const cmdName string = "gal"
 const version string = "1.1.0"
+
+type user struct {
+	name string
+	mail string
+}
 
 const (
 	exitSuccess int = iota // 0
@@ -59,7 +66,9 @@ func main() {
 // This method get authors name and mail address from git log.
 func getAuthors(opts options) []string {
 	if opts.Commit {
-		return getCommitOrder()
+		return getAuthorsCommitOrder()
+	} else if opts.LOC {
+		return getAuthorsLOCOrder()
 	}
 	return getAuthorsAlphabeticalOrder()
 }
@@ -77,7 +86,7 @@ func getAuthorsAlphabeticalOrder() []string {
 	return list
 }
 
-func getCommitOrder() []string {
+func getAuthorsCommitOrder() []string {
 	// https://stackoverflow.com/questions/51966053/what-is-wrong-with-invoking-git-shortlog-from-go-exec
 	// > If no revisions are passed on the command line and either standard input is not a terminal or there
 	// > is no current branch, git shortlog will output a summary of the log read from standard input, without
@@ -102,9 +111,89 @@ func getCommitOrder() []string {
 	return result
 }
 
+func getAuthorsLOCOrder() []string {
+	// key=user, value=amount of modified LOC
+	userInfo := map[user]int{}
+
+	users := getUsers()
+	for _, v := range users {
+		out, err := exec.Command("git", "log", "--author="+v.mail, "--numstat", "--pretty=", "--no-merges", "main").Output()
+		if err != nil {
+			out, err = exec.Command("git", "log", "--author=\""+v.mail+"\"", "--numstat", "--pretty=", "--no-merges", "master").Output()
+			if err != nil {
+				die("this repository don't have main branch or master branch: " + err.Error())
+			}
+		}
+
+		list := strings.Split(string(out), "\n")
+		sum := 0
+		for _, line := range list {
+			list := strings.Fields(line)
+			if len(list) == 3 { // 0=append line num, 1=delete line num, 2=file name
+				sum = sum + atoi(list[0]) + atoi(list[1])
+			}
+		}
+		userInfo[v] = sum
+	}
+
+	type kv struct {
+		Key   user
+		Value int
+	}
+
+	var ss []kv
+	for k, v := range userInfo {
+		ss = append(ss, kv{k, v})
+	}
+
+	sort.Slice(ss, func(i, j int) bool {
+		return ss[i].Value > ss[j].Value
+	})
+
+	result := []string{}
+	for _, kv := range ss {
+		result = append(result, kv.Key.name+"<"+kv.Key.mail+">")
+	}
+	return result
+}
+
+func sortUserInfo(m map[user]int) map[user]int {
+
+	return m
+}
+
+func atoi(s string) int {
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		die("can not get amount of modified LOC")
+	}
+	return i
+}
+
+func getUsers() []user {
+	users := []user{}
+	authors := getAuthors(options{})
+
+	rex := regexp.MustCompile(`<[^<]*@.*>$`) // e-mail address
+	for _, v := range authors {
+		mailWithAngleBrackets := rex.FindString(v)
+		tmp := strings.Replace(mailWithAngleBrackets, "<", "", 1)
+		mail := strings.Replace(tmp, ">", "", 1)
+
+		u := user{
+			name: strings.Replace(v, mailWithAngleBrackets, "", 1),
+			mail: mail,
+		}
+		users = append(users, u)
+	}
+	return users
+}
+
 func getHeader(opts options) string {
 	if opts.Commit {
-		return "# Authors List (in descending order of the commits)\n"
+		return "# Authors List (in descending order, amount of commits)\n"
+	} else if opts.LOC {
+		return "# Authors List (in descendig order, amount of modified LOC)\n"
 	}
 	return "# Authors List (in alphabetical order)\n"
 }
@@ -152,8 +241,11 @@ func makeAuthorsFile(header string, text []string) {
 	defer file.Close()
 
 	file.WriteString(header)
-	file.WriteString(strings.Join(text, "\n"))
-	file.WriteString("\n")
+	for _, v := range text {
+		if !strings.Contains(v, "dependabot") {
+			file.WriteString(v + "\n")
+		}
+	}
 }
 
 // parseArgs parse command line arguments.
@@ -177,6 +269,10 @@ func parseArgs(opts *options) []string {
 	if opts.Version {
 		showVersion(cmdName, version)
 		osExit(exitSuccess)
+	}
+
+	if opts.Commit && opts.LOC {
+		die("can not specify --commit option and --loc at same time")
 	}
 	return args
 }
