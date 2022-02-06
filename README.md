@@ -2,7 +2,11 @@
 
 [[日本語](./doc/README.ja.md)]
 # gal - generate authors file from git log
-gal command generate AUTHORS.md file at current directory. gal command gets the author name and email address from the information in the git log. The information is written in alphabetical order in AUTHORS.md.
+gal command generate AUTHORS.md file at current directory. gal command gets the author name and email address from the information in the git log. There are three ways to specify the order of author name.
+- Default        : in alphabetical order.
+- --loc option   : sort author names by amount of modified LOC (descendig order)
+- --commit option: sort author names by amount of commits (descendig order)
+
 # How to install
 ## Step.1 Install golang
 If you don't install golang in your system, please install Golang first. Check the [Go official website](https://go.dev/doc/install) for how to install golang.
@@ -22,6 +26,8 @@ $ cat AUTHORS.md
 CHIKAMATSU Naohiro<n.chika156@gmail.com>
 TEST User<test@gmail.com>
 ```
+
+
 
 # Contact
 If you would like to send comments such as "find a bug" or "request for additional features" to the developer, please use one of the following contacts.
