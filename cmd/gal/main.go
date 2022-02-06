@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -28,13 +29,14 @@ import (
 )
 
 type options struct {
+	Commit  bool `short:"c" long:"commit" description:"Sort AUTHOR names by descending order of the commits (default: alphabetical order)"`
 	Version bool `short:"v" long:"version" description:"Show gal command version"`
 }
 
 var osExit = os.Exit
 
 const cmdName string = "gal"
-const version string = "1.0.0"
+const version string = "1.1.0"
 
 const (
 	exitSuccess int = iota // 0
@@ -48,21 +50,63 @@ func main() {
 	if !exists(".git") {
 		die(": .git directory does not exists")
 	}
-	makeAuthorsFile(getAuthors())
+	header := getHeader(opts)
+	authors := getAuthors(opts)
+	makeAuthorsFile(header, authors)
 }
 
 // getAuthors returns authors in this project.
 // This method get authors name and mail address from git log.
-func getAuthors() []string {
+func getAuthors(opts options) []string {
+	if opts.Commit {
+		return getCommitOrder()
+	}
+	return getAuthorsAlphabeticalOrder()
+}
+
+// getAuthorsAlphabeticalOrder returs authors name and authors mail address in alphabetical order
+func getAuthorsAlphabeticalOrder() []string {
 	out, err := exec.Command("git", "log", "--pretty=format:%an<%ae>").Output()
 	if err != nil {
-		die("")
+		die(err.Error())
 	}
 
 	list := strings.Split(string(out), "\n")
 	list = removeDuplicate(list)
 	sort.Strings(list)
 	return list
+}
+
+func getCommitOrder() []string {
+	// https://stackoverflow.com/questions/51966053/what-is-wrong-with-invoking-git-shortlog-from-go-exec
+	// > If no revisions are passed on the command line and either standard input is not a terminal or there
+	// > is no current branch, git shortlog will output a summary of the log read from standard input, without
+	// > reference to the current repository.
+	out, err := exec.Command("git", "shortlog", "--numbered", "--summary", "--email", "main").Output()
+	if err != nil {
+		out, err = exec.Command("git", "shortlog", "--numbered", "--summary", "--email", "master").Output()
+		if err != nil {
+			die("this repository don't have main branch or master branch: " + err.Error())
+		}
+	}
+	// Before:     4	CHIKAMATSU Naohiro <n.chika156@gmail.com>
+	// After :CHIKAMATSU Naohiro <n.chika156@gmail.com>
+	var result []string
+	re := regexp.MustCompile(`\s+\d+\s`)
+	for _, v := range strings.Split(string(out), "\n") {
+		if v == "" {
+			break
+		}
+		result = append(result, re.ReplaceAllString(v, ""))
+	}
+	return result
+}
+
+func getHeader(opts options) string {
+	if opts.Commit {
+		return "# Authors List (in descending order of the commits)\n"
+	}
+	return "# Authors List (in alphabetical order)\n"
 }
 
 // removeDuplicate removes duplicates in the slice.
@@ -100,14 +144,14 @@ func die(msg string) {
 }
 
 // If it can not create file, exit command.
-func makeAuthorsFile(text []string) {
+func makeAuthorsFile(header string, text []string) {
 	file, err := os.Create("AUTHORS.md")
 	if err != nil {
 		die(err.Error())
 	}
 	defer file.Close()
 
-	file.WriteString("# Authors List (in alphabetical order)\n")
+	file.WriteString(header)
 	file.WriteString(strings.Join(text, "\n"))
 	file.WriteString("\n")
 }
@@ -144,7 +188,6 @@ func showHelp(p *flags.Parser) {
 
 // showHelpFooter print author contact information.
 func showHelpFooter() {
-	fmt.Println("")
 	fmt.Println("Contact:")
 	fmt.Println("  If you find the bugs, please report the content of the error.")
 	fmt.Println("  [GitHub Issue] https://github.com/nao1215/gal/issues")
