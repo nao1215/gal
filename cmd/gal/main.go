@@ -38,7 +38,7 @@ type options struct {
 var osExit = os.Exit
 
 const cmdName string = "gal"
-const version string = "1.1.0"
+const version string = "1.1.1"
 
 type user struct {
 	name string
