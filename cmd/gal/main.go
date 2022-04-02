@@ -18,6 +18,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -38,7 +39,7 @@ type options struct {
 var osExit = os.Exit
 
 const cmdName string = "gal"
-const version string = "1.1.1"
+const version string = "1.2.1"
 
 type user struct {
 	name string
@@ -91,13 +92,17 @@ func getAuthorsCommitOrder() []string {
 	// > If no revisions are passed on the command line and either standard input is not a terminal or there
 	// > is no current branch, git shortlog will output a summary of the log read from standard input, without
 	// > reference to the current repository.
-	out, err := exec.Command("git", "shortlog", "--numbered", "--summary", "--email", "main").Output()
+	defalutBranch, err := defaultBranch()
 	if err != nil {
-		out, err = exec.Command("git", "shortlog", "--numbered", "--summary", "--email", "master").Output()
-		if err != nil {
-			die("this repository don't have main branch or master branch: " + err.Error())
-		}
+		fmt.Fprintf(os.Stderr, "contributor: %s\n", err.Error())
+		die("this repository don't have main branch or master branch: " + err.Error())
 	}
+
+	out, err := exec.Command("git", "shortlog", "--numbered", "--summary", "--email", defalutBranch).Output()
+	if err != nil {
+		die(err.Error())
+	}
+
 	// Before:     4	CHIKAMATSU Naohiro <n.chika156@gmail.com>
 	// After :CHIKAMATSU Naohiro <n.chika156@gmail.com>
 	var result []string
@@ -115,14 +120,17 @@ func getAuthorsLOCOrder() []string {
 	// key=user, value=amount of modified LOC
 	userInfo := map[user]int{}
 
+	defalutBranch, err := defaultBranch()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "contributor: %s\n", err.Error())
+		die("this repository don't have main branch or master branch: " + err.Error())
+	}
+
 	users := getUsers()
 	for _, v := range users {
-		out, err := exec.Command("git", "log", "--author="+v.mail, "--numstat", "--pretty=", "--no-merges", "main").Output()
+		out, err := exec.Command("git", "log", "--author="+v.mail, "--numstat", "--pretty=", "--no-merges", defalutBranch).Output()
 		if err != nil {
-			out, err = exec.Command("git", "log", "--author=\""+v.mail+"\"", "--numstat", "--pretty=", "--no-merges", "master").Output()
-			if err != nil {
-				die("this repository don't have main branch or master branch: " + err.Error())
-			}
+			die(err.Error())
 		}
 
 		list := strings.Split(string(out), "\n")
@@ -157,9 +165,21 @@ func getAuthorsLOCOrder() []string {
 	return result
 }
 
-func sortUserInfo(m map[user]int) map[user]int {
+func defaultBranch() (string, error) {
+	out, err := exec.Command("git", "remote", "show", "origin").Output()
+	if err != nil {
+		return "", errors.New("can not get default branch name")
+	}
 
-	return m
+	list := strings.Split(string(out), "\n")
+	for _, v := range list {
+		v = strings.TrimSpace(v)
+		if strings.Contains(v, "HEAD branch:") {
+			v = strings.TrimLeft(v, "HEAD branch:")
+			return strings.TrimSpace(v), nil
+		}
+	}
+	return "", errors.New("can not get default branch name")
 }
 
 func atoi(s string) int {
